@@ -33,6 +33,7 @@ class CocoConverter:
           segmentation.append(contour.ravel().tolist())
 
     return segmentation 
+    
   def mask_to_bbox(self, mask):
     y_indices, x_indices = np.where(mask)
 
