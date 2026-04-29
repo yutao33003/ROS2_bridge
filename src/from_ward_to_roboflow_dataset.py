@@ -2,7 +2,7 @@
 Convert COCO instance data in a fixed input layout into Roboflow-style split annotation outputs.
 
 Input layout:
-    <input-root>/rgb_image/<tag>_rgb/*.png
+    <input-root>/rgbDataset/<tag>_rgb/*.png
     <input-root>/jsonDataset/<tag>.json
 
 Output layout:
@@ -10,11 +10,13 @@ Output layout:
     <input-root>/valid/_annotations.coco.json
     <input-root>/test/_annotations.coco.json
 
-Optional preview layout:
+Optional preview layout with split:
     <input-root>/ground_truth_preview/<split>/*.jpg
+Optional preview layout with tag:
+    <input-root>/ground_truth_preview/<tag>/*.jpg
 
 Usage:
-    python -m src.from_ward_to_roboflow_dataset  --input-root /data/chenp6/SegmentationTask/data/ward_dataset --export-ground-truth-images
+    python -m src.from_ward_to_roboflow_dataset  --input-root /data/chenp6/SegmentationTask/data/ward_dataset --export-ground-truth-images --ground-truth-layout tag
 
 """
 
@@ -48,8 +50,8 @@ def parse_args() -> argparse.Namespace:
         "--input-root",
         required=True,
         help=(
-            "輸入根目錄，需包含 rgb_image 與 jsonDataset。 "
-            "Input root containing rgb_image and jsonDataset."
+            "輸入根目錄，需包含 rgbDataset 與 jsonDataset。 "
+            "Input root containing rgbDataset and jsonDataset."
         ),
     )
     parser.add_argument(
@@ -90,12 +92,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--ground-truth-layout",
+        choices=["split", "tag"],
+        default="split",
+        help=(
+            "ground truth 視覺化影像資料夾結構：split 或 tag。"
+            "Layout for ground-truth preview folders: split or tag."
+        ),
+    )
+    parser.add_argument(
         "--max-preview-images",
         type=int,
         default=None,
         help=(
-            "每個 split 最多輸出幾張 ground truth 視覺化影像。"
-            "Maximum number of preview images to export per split."
+            "每個資料夾(split/tag)最多輸出幾張 ground truth 視覺化影像。"
+            "Maximum number of preview images to export per output folder (split/tag)."
         ),
     )
     parser.add_argument(
@@ -208,6 +219,18 @@ def resolve_split_image_path(input_root: Path, split: str, file_name: str) -> Pa
     return (input_root / split / file_name).resolve()
 
 
+def extract_tag_from_file_name(file_name: str) -> str:
+    """從 image file_name 提取 tag。Extract tag from image file_name."""
+    parts = Path(file_name).parts
+    if len(parts) < 2:
+        return "unknown_tag"
+
+    tag_rgb = parts[-2]
+    if tag_rgb.endswith("_rgb"):
+        return tag_rgb[: -len("_rgb")]
+    return tag_rgb
+
+
 def merge_coco_files(json_files: Iterable[Path], input_root: Path) -> dict:
     """Merge multiple COCO json files and reindex image/annotation/category ids."""
     merged = {"images": [], "annotations": [], "categories": []}
@@ -234,8 +257,8 @@ def merge_coco_files(json_files: Iterable[Path], input_root: Path) -> dict:
                 continue
             categories_by_id[current_category_id] = copy.deepcopy(category)
 
-        # 重新指定 image id，並把 file_name 改成指向原始 rgb_image/<tag>_rgb/ 路徑。
-        # Reassign image ids and rewrite file_name to point at the original rgb_image/<tag>_rgb/ path.
+        # 重新指定 image id，並把 file_name 改成指向原始 rgbDataset/<tag>_rgb/ 路徑。
+        # Reassign image ids and rewrite file_name to point at the original rgbDataset/<tag>_rgb/ path.
         for image in data.get("images", []):
             new_image = copy.deepcopy(image)
             original_file_name = Path(image["file_name"]).name
@@ -245,8 +268,8 @@ def merge_coco_files(json_files: Iterable[Path], input_root: Path) -> dict:
             else:
                 new_file_name = f"rgb_{original_file_name}"
 
-            new_image["file_name"] = f"../rgb_image/{tag}_rgb/{new_file_name}"
-            file_path = input_root / "rgb_image" / f"{tag}_rgb" / new_file_name
+            new_image["file_name"] = f"../rgbDataset/{tag}_rgb/{new_file_name}"
+            file_path = input_root / "rgbDataset" / f"{tag}_rgb" / new_file_name
             if not file_path.is_file():
                 continue
 
@@ -377,21 +400,18 @@ def export_ground_truth_images(
     output_dir: Path,
     max_preview_images: int | None,
     preview_background: str,
+    layout: str,
 ) -> None:
     """輸出 ground truth 視覺化影像。Export ground-truth visualization images."""
-    split_output_dir = output_dir / split
-    split_output_dir.mkdir(parents=True, exist_ok=True)
-
     annotations_by_image = anns_by_image_id(dataset.get("annotations", []))
     categories_by_id = {
         int(category["id"]): category for category in dataset.get("categories", [])
     }
 
-    image_count = 0
-    for image_info in dataset.get("images", []):
-        if max_preview_images is not None and image_count >= max_preview_images:
-            break
+    folder_image_counts: Dict[Path, int] = {}
+    used_output_dirs: set[Path] = set()
 
+    for image_info in dataset.get("images", []):
         image_path = resolve_split_image_path(
             input_root=input_root,
             split=split,
@@ -400,6 +420,22 @@ def export_ground_truth_images(
         if not image_path.exists():
             print(f"Skipping preview image because source was not found: {image_path}")
             continue
+
+        if layout == "tag":
+            folder_name = extract_tag_from_file_name(str(image_info["file_name"]))
+            image_name = f"{Path(str(image_info['file_name'])).stem}__gt.jpg"
+        else:
+            folder_name = split
+            image_name = f"{image_info['id']}__gt.jpg"
+
+        current_output_dir = output_dir / folder_name
+        current_count = folder_image_counts.get(current_output_dir, 0)
+        if max_preview_images is not None and current_count >= max_preview_images:
+            continue
+
+        current_output_dir.mkdir(parents=True, exist_ok=True)
+        used_output_dirs.add(current_output_dir)
+
         source_image = Image.open(image_path).convert("RGBA")
         if preview_background == "white":
             image = Image.new("RGBA", source_image.size, (255, 255, 255, 255))
@@ -437,11 +473,12 @@ def export_ground_truth_images(
                 draw.text((x + 2, y + 2), category_name, fill=color)
 
         composed = Image.alpha_composite(image, overlay).convert("RGB")
-        output_path = split_output_dir / f"{image_info['id']}__gt.jpg"
+        output_path = current_output_dir / image_name
         composed.save(output_path, quality=95)
-        image_count += 1
+        folder_image_counts[current_output_dir] = current_count + 1
 
-    print(f"Saved ground-truth preview images to: {split_output_dir}")
+    for current_output_dir in sorted(used_output_dirs):
+        print(f"Saved ground-truth preview images to: {current_output_dir}")
 
 
 def run_random_split(input_root: Path, args: argparse.Namespace) -> None:
@@ -478,6 +515,7 @@ def run_random_split(input_root: Path, args: argparse.Namespace) -> None:
                 output_dir=ground_truth_output_dir,
                 max_preview_images=args.max_preview_images,
                 preview_background=args.preview_background,
+                layout=args.ground_truth_layout,
             )
 
 
