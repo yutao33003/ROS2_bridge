@@ -2,6 +2,7 @@
 
 import numpy as np
 from skimage import measure
+from pycocotools import mask as coco_mask
 
 class CocoConverter:
   def extract_instances(self, segmentation_image):
@@ -20,6 +21,15 @@ class CocoConverter:
 
     return instances
   
+
+  def mask_to_rle(self, mask):
+      # mask: bool or uint8, shape [H, W]
+      mask_u8 = np.asfortranarray(mask.astype(np.uint8))
+      rle = coco_mask.encode(mask_u8)
+      # json 不接受 bytes，要轉字串
+      rle["counts"] = rle["counts"].decode("utf-8")
+      return rle
+
   def mask_to_polygon(self,mask):
     """
       mask -> polygon，找出物件邊界

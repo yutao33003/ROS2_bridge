@@ -175,7 +175,8 @@ class DatasetExporter(Node):
             continue
         category_id = self.dataset.add_category(class_name)
         
-        segmentation  = self.converter.mask_to_polygon(mask)
+        #segmentation  = self.converter.mask_to_polygon(mask)
+        segmentation = self.converter.mask_to_rle(mask)        
         bbox = self.converter.mask_to_bbox(mask)
         h_img, w_img = mask.shape
 
