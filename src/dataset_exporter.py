@@ -48,14 +48,13 @@ class DatasetExporter(Node):
     self.ts = ApproximateTimeSynchronizer(
       [self.rgb_sub, self.inst_sub, self.sem_sub],
        queue_size = 10,
-       slop = 0.1
+       slop = 0.02
     )
 
     self.ts.registerCallback(self.synced_callback)
   
   def synced_callback(self, rgb_msg, inst_msg, sem_msg):
      current_time = time.time()
-
      if current_time - self.start_time > 30:
         print("⏰ Reached 30 seconds, shutting down...")
         self.destroy_node()
@@ -168,7 +167,7 @@ class DatasetExporter(Node):
     image_id = self.dataset.add_image(file_name, width, height, date_capture)
     instances = self.converter.extract_instances(inst)
     inst_to_class = self.build_inst_to_class(inst, sem)
-    merged_instances = self.merge_instances_by_class(instances, inst_to_class, sem)
+   #  merged_instances = self.merge_instances_by_class(instances, inst_to_class, sem)
    #  for class_name, mask in merged_instances:    
     for inst_id, mask in instances:
         class_name = inst_to_class.get(inst_id, "unknown")
@@ -279,6 +278,8 @@ class DatasetExporter(Node):
 
       if new_map:
          # 只用「更好的資料」更新，不允許覆蓋已有的有效 label
+         print("🔄 更新 semantic map:")
+         print(f"  新資料: {new_map}")
          for k, v in new_map.items():
                if k not in self.semantic_id_to_name:
                   self.semantic_id_to_name[k] = v
