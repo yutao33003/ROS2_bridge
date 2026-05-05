@@ -55,8 +55,8 @@ class DatasetExporter(Node):
   
   def synced_callback(self, rgb_msg, inst_msg, sem_msg):
      current_time = time.time()
-     if current_time - self.start_time > 30:
-        print("⏰ Reached 30 seconds, shutting down...")
+     if current_time - self.start_time > 100:  # 100秒後自動關閉
+        print("⏰ Reached 100 seconds, shutting down...")
         self.destroy_node()
         rclpy.shutdown()
         return
