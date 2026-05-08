@@ -27,7 +27,7 @@ class DatasetExporter(Node):
     now = datetime.datetime.now()
     self.time_str = now.strftime("%Y-%m-%d_%H:%M:%S")
     self.last_save_time = 0
-    self.save_interval = 0.5
+    self.save_interval = 0.01
 
     self.bridge = CvBridge()
     self.converter = CocoConverter()
@@ -48,15 +48,15 @@ class DatasetExporter(Node):
     self.ts = ApproximateTimeSynchronizer(
       [self.rgb_sub, self.inst_sub, self.sem_sub],
        queue_size = 10,
-       slop = 0.02
+       slop = 0.001
     )
 
     self.ts.registerCallback(self.synced_callback)
   
   def synced_callback(self, rgb_msg, inst_msg, sem_msg):
      current_time = time.time()
-     if current_time - self.start_time > 100:  # 100秒後自動關閉
-        print("⏰ Reached 100 seconds, shutting down...")
+     if current_time - self.start_time > 30:  # 30秒後自動關閉
+        print("⏰ Reached 30 seconds, shutting down...")
         self.destroy_node()
         rclpy.shutdown()
         return
